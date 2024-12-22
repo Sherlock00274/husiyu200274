@@ -1,0 +1,405 @@
+<!DOCTYPE html>
+    <html lang="en">
+    <head>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        <title>Falling Text with Mouse Follow</title>
+        <script src="https://cdn.tailwindcss.com"></script>
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/matter-js/0.19.0/matter.min.js"></script>
+        <style>
+            body {
+                margin: 0;
+                overflow: hidden;
+                background-color: #000;
+            }
+            .controls {
+                position: absolute;
+                top: 10px;
+                left: 10px;
+                z-index: 10;
+                background: rgba(0, 0, 0, 0.8);
+                padding: 10px;
+                border-radius: 8px;
+                width: 200px;
+                max-height: 400px;
+                overflow-y: auto;
+                font-size: 12px;
+                color: white;
+                transition: transform 0.3s ease-in-out;
+            }
+            .controls.hidden {
+                transform: translateX(-220px); /* 隐藏时向左移动 */
+            }
+            .controls label {
+                display: block;
+                margin-bottom: 5px;
+                font-weight: bold;
+            }
+            .controls input,
+            .controls select {
+                width: 100%;
+                margin-bottom: 10px;
+                padding: 5px;
+                border-radius: 4px;
+                border: none;
+            }
+            .controls .file-input {
+                cursor: pointer;
+                background: linear-gradient(90deg, #4f46e5, #9333ea);
+                color: white;
+                padding: 10px 20px;
+                border-radius: 8px;
+                font-size: 16px;
+                font-weight: bold;
+                transition: transform 0.2s, box-shadow 0.2s;
+                margin-bottom: 10px;
+            }
+            .controls .file-input:hover {
+                transform: scale(1.05);
+                box-shadow: 0 4px 15px rgba(147, 51, 234, 0.5);
+            }
+            .toggle-button {
+                position: absolute;
+                top: 10px;
+                left: 220px;
+                z-index: 20;
+                background: linear-gradient(90deg, #9333ea, #4f46e5);
+                color: white;
+                padding: 10px 20px;
+                border-radius: 8px;
+                font-size: 14px;
+                font-weight: bold;
+                cursor: pointer;
+                transition: transform 0.2s, box-shadow 0.2s;
+            }
+            .toggle-button:hover {
+                transform: scale(1.05);
+                box-shadow: 0 4px 15px rgba(147, 51, 234, 0.5);
+            }
+        </style>
+    </head>
+    <body>
+        <!-- Falling Text Controls -->
+        <div id="textControls" class="controls">
+            <h3>Falling Text Controls</h3>
+            <label for="textInput">Text</label>
+            <input id="textInput" type="text" placeholder="Enter your text here">
+
+            <label for="colorInput">Font Color</label>
+            <input id="colorInput" type="color" value="#ffffff">
+
+            <label for="fontSelect">Font</label>
+            <select id="fontSelect">
+                <option value="Arial">Arial</option>
+                <option value="Verdana">Verdana</option>
+                <option value="Times New Roman">Times New Roman</option>
+                <option value="Courier New">Courier New</option>
+                <option value="Georgia">Georgia</option>
+            </select>
+
+            <label for="fontSizeInput">Font Size</label>
+            <input id="fontSizeInput" type="range" min="10" max="100" value="30">
+            <span id="fontSizeValue">30px</span>
+
+            <label for="speedInput">Falling Speed</label>
+            <input id="speedInput" type="range" min="1" max="10" value="5">
+            <span id="speedValue">5</span>
+
+            <label for="bgColorInput">Background Color</label>
+            <input id="bgColorInput" type="color" value="#1e3a8a">
+
+            <label for="glowToggle">Enable Glow</label>
+            <input id="glowToggle" type="checkbox" checked>
+            <label for="glowColorInput">Glow Color</label>
+            <input id="glowColorInput" type="color" value="#ffffff">
+
+            <label for="strokeToggle">Enable Stroke</label>
+            <input id="strokeToggle" type="checkbox">
+            <label for="strokeColorInput">Stroke Color</label>
+            <input id="strokeColorInput" type="color" value="#000000">
+
+            <label for="audioFile" class="file-input">Upload Audio File</label>
+            <input type="file" id="audioFile" accept="audio/*" class="hidden">
+
+            <label for="loopToggle">Loop Audio</label>
+            <input id="loopToggle" type="checkbox">
+        </div>
+
+        <!-- Toggle Button -->
+        <div id="toggleButton" class="toggle-button">Hide Controls</div>
+
+        <script>
+            // Matter.js module aliases
+            const { Engine, Render, Runner, Bodies, Composite, Events, Body } = Matter;
+
+            // Create engine and world
+            const engine = Engine.create();
+            const world = engine.world;
+
+            // Create renderer
+            const render = Render.create({
+                element: document.body,
+                engine: engine,
+                options: {
+                    width: window.innerWidth,
+                    height: window.innerHeight,
+                    wireframes: false,
+                    background: 'transparent',
+                },
+            });
+
+            Render.run(render);
+
+            // Create runner
+            const runner = Runner.create();
+            Runner.run(runner, engine);
+
+            // Add ground (static body)
+            const ground = Bodies.rectangle(window.innerWidth / 2, window.innerHeight + 50, window.innerWidth, 100, {
+                isStatic: true,
+                render: {
+                    visible: false, // Hide the ground visually
+                },
+            });
+            Composite.add(world, ground);
+
+            // Variables for controlling falling text
+            let fallingSpeed = 5; // Default speed
+            let currentIndex = 0; // Current character index for falling text
+            let font = "Arial"; // Default font
+            let fontSize = 30; // Default font size
+            let enableGlow = true; // Default glow
+            let glowColor = "#ffffff"; // Default glow color
+            let enableStroke = false; // Default stroke
+            let strokeColor = "#000000"; // Default stroke color
+            let audioLoop = false; // Default audio loop setting
+            let mouseX = window.innerWidth / 2; // Default mouse position
+
+            // Audio variables
+            let audioContext, source, analyser;
+            let audioPlaying = false;
+
+            // Update font size when slider changes
+            const fontSizeInput = document.getElementById('fontSizeInput');
+            const fontSizeValue = document.getElementById('fontSizeValue');
+            fontSizeInput.addEventListener('input', () => {
+                fontSize = parseInt(fontSizeInput.value);
+                fontSizeValue.textContent = `${fontSize}px`;
+            });
+
+            // Update speed value when slider changes
+            const speedInput = document.getElementById('speedInput');
+            const speedValue = document.getElementById('speedValue');
+            speedInput.addEventListener('input', () => {
+                fallingSpeed = parseInt(speedInput.value);
+                speedValue.textContent = fallingSpeed;
+            });
+
+            // Update background color when color picker changes
+            const bgColorInput = document.getElementById('bgColorInput');
+            bgColorInput.addEventListener('input', () => {
+                document.body.style.background = bgColorInput.value;
+            });
+
+            // Update font when selection changes
+            const fontSelect = document.getElementById('fontSelect');
+            fontSelect.addEventListener('change', () => {
+                font = fontSelect.value;
+            });
+
+            // Update glow settings
+            const glowToggle = document.getElementById('glowToggle');
+            const glowColorInput = document.getElementById('glowColorInput');
+            glowToggle.addEventListener('change', () => {
+                enableGlow = glowToggle.checked;
+            });
+            glowColorInput.addEventListener('input', () => {
+                glowColor = glowColorInput.value;
+            });
+
+            // Update stroke settings
+            const strokeToggle = document.getElementById('strokeToggle');
+            const strokeColorInput = document.getElementById('strokeColorInput');
+            strokeToggle.addEventListener('change', () => {
+                enableStroke = strokeToggle.checked;
+            });
+            strokeColorInput.addEventListener('input', () => {
+                strokeColor = strokeColorInput.value;
+            });
+
+            // Update audio loop setting
+            const loopToggle = document.getElementById('loopToggle');
+            loopToggle.addEventListener('change', () => {
+                audioLoop = loopToggle.checked;
+                if (source) {
+                    source.loop = audioLoop;
+                }
+            });
+
+            // Track mouse position
+            document.addEventListener('mousemove', (event) => {
+                mouseX = event.clientX; // Update mouse X position
+            });
+
+            // Function to add a single falling character
+            function addFallingCharacter(char, color, size) {
+                const constrainedX = Math.max(
+                    0,
+                    Math.min(mouseX, window.innerWidth)
+                );
+
+                const textBody = Bodies.rectangle(constrainedX, -50, size * 0.6, size * 0.8, {
+                    render: {
+                        visible: false,
+                        text: {
+                            content: char,
+                            size: size,
+                            color: color,
+                        },
+                    },
+                    isStatic: false,
+                });
+
+                Body.setAngularVelocity(textBody, (Math.random() - 0.5) * 0.1);
+                Body.rotate(textBody, Math.random() * Math.PI * 0.1);
+                engine.world.gravity.y = fallingSpeed / 10;
+                Composite.add(world, textBody);
+            }
+
+            // Function to handle falling text one character at a time
+            function startFallingText() {
+                const input = document.getElementById('textInput').value || "Hello";
+                const color = document.getElementById('colorInput').value;
+
+                if (currentIndex < input.length) {
+                    addFallingCharacter(input[currentIndex], color, fontSize);
+                    currentIndex++;
+                } else {
+                    currentIndex = 0;
+                }
+            }
+
+            // Custom rendering for text
+            Events.on(render, 'afterRender', () => {
+                const context = render.context;
+                const bodies = Composite.allBodies(world);
+
+                context.textAlign = 'center';
+                context.textBaseline = 'middle';
+
+                bodies.forEach((body) => {
+                    if (body.render.text) {
+                        const { content, size, color } = body.render.text;
+                        context.save();
+                        context.translate(body.position.x, body.position.y);
+                        context.rotate(body.angle);
+                        context.font = `bold ${size}px ${font}`;
+                        context.fillStyle = color || 'white';
+
+                        if (enableGlow) {
+                            context.shadowColor = glowColor;
+                            context.shadowBlur = 20;
+                        } else {
+                            context.shadowBlur = 0;
+                        }
+
+                        if (enableStroke) {
+                            context.strokeStyle = strokeColor;
+                            context.lineWidth = 2;
+                            context.strokeText(content, 0, 0);
+                        }
+
+                        context.fillText(content, 0, 0);
+                        context.restore();
+                    }
+                });
+            });
+
+            // Automatically generate falling text
+            setInterval(() => {
+                startFallingText();
+            }, 300);
+
+            // Audio file input
+            const audioFileInput = document.getElementById('audioFile');
+            audioFileInput.addEventListener('change', (event) => {
+                const file = event.target.files[0];
+                if (file) {
+                    audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                    const reader = new FileReader();
+
+                    reader.onload = (e) => {
+                        audioContext.decodeAudioData(e.target.result, (buffer) => {
+                            source = audioContext.createBufferSource();
+                            source.buffer = buffer;
+                            source.loop = audioLoop;
+
+                            analyser = audioContext.createAnalyser();
+                            analyser.fftSize = 256;
+
+                            source.connect(analyser);
+                            analyser.connect(audioContext.destination);
+
+                            source.start(0);
+                            audioPlaying = true;
+
+                            visualizeFontSize();
+                        });
+                    };
+
+                    reader.readAsArrayBuffer(file);
+                }
+            });
+
+            // Adjust font size based on audio volume
+            function visualizeFontSize() {
+                const dataArray = new Uint8Array(analyser.frequencyBinCount);
+
+                function adjustFontSize() {
+                    if (audioPlaying) {
+                        analyser.getByteFrequencyData(dataArray);
+                        const average = dataArray.reduce((a, b) => a + b, 0) / dataArray.length;
+                        fontSize = Math.max(10, Math.min(average / 2, 100)); // Scale font size
+                        fontSizeInput.value = fontSize; // Sync with slider
+                        fontSizeValue.textContent = `${fontSize}px`;
+                    }
+                    requestAnimationFrame(adjustFontSize);
+                }
+
+                adjustFontSize();
+            }
+
+            // Toggle controls visibility
+            const textControls = document.getElementById('textControls');
+            const toggleButton = document.getElementById('toggleButton');
+            toggleButton.addEventListener('click', () => {
+                textControls.classList.toggle('hidden');
+                toggleButton.textContent = textControls.classList.contains('hidden') ? 'Show Controls' : 'Hide Controls';
+            });
+        </script>
+    <script>window.parent.postMessage({ action: "ready" }, "*"); 
+ 
+window.console = new Proxy(console, {
+  get(target, prop) {
+    if (['log', 'warn', 'error'].includes(prop)) {
+      return new Proxy(target[prop], {
+        apply(fn, thisArg, args) {
+          fn.apply(thisArg, args);
+          window.parent.postMessage({ action: 'console', 
+            type: prop, 
+            args: args.map((arg) => {
+              try {
+                return JSON.stringify(arg).replace(/^["']|["']$/g, '');
+              } catch (e) {
+                return arg;
+              }
+            }) 
+          }, '*');
+        }
+      });
+    }
+    return target[prop];
+  }
+});
+</script></body>
+    </html>
