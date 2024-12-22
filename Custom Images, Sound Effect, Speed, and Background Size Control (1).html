@@ -1,0 +1,451 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Custom Images, Sound Effect, Speed, and Background Size Control</title>
+    <style>
+        body {
+            margin: 0;
+            overflow: hidden;
+            background-color: #f0f0f0;
+            background-size: cover;
+            background-position: center;
+        }
+        .ball {
+            position: absolute;
+            width: 100px;
+            height: 100px;
+            background-color: red;
+            border-radius: 50%;
+            background-size: contain;
+            background-repeat: no-repeat;
+            background-position: center;
+            cursor: grab;
+        }
+        .square {
+            position: absolute;
+            width: 120px;
+            height: 120px;
+            background-color: blue;
+            background-size: contain;
+            background-repeat: no-repeat;
+            background-position: center;
+        }
+        .particle {
+            position: absolute;
+            width: 5px;
+            height: 5px;
+            background-color: brown;
+            border-radius: 50%;
+            pointer-events: none;
+        }
+        .controls {
+            position: fixed;
+            top: 10px;
+            left: 10px;
+            z-index: 1000;
+            background: rgba(255, 255, 255, 0.8);
+            padding: 10px;
+            border-radius: 5px;
+            box-shadow: 0 2px 5px rgba(0, 0, 0, 0.2);
+        }
+        .controls input,
+        .controls label {
+            margin-bottom: 5px;
+            display: block;
+        }
+        .controls .slider-container {
+            margin-top: 10px;
+        }
+    </style>
+</head>
+<body>
+    <div class="controls">
+        <label>
+            小球图片:
+            <input type="file" id="ballImageInput" accept="image/*">
+        </label>
+        <label>
+            方块图片 1:
+            <input type="file" id="squareImageInput1" accept="image/*">
+        </label>
+        <label>
+            方块图片 2:
+            <input type="file" id="squareImageInput2" accept="image/*">
+        </label>
+        <label>
+            背景图片:
+            <input type="file" id="backgroundImageInput" accept="image/*">
+        </label>
+        <label>
+            音效文件:
+            <input type="file" id="soundEffectInput" accept="audio/*">
+        </label>
+        <div class="slider-container">
+            <label for="speedSlider">小球速度: <span id="speedValue">6</span></label>
+            <input type="range" id="speedSlider" min="1" max="20" value="6">
+        </div>
+        <div class="slider-container">
+            <label for="backgroundSizeSlider">背景大小: <span id="backgroundSizeValue">100%</span></label>
+            <input type="range" id="backgroundSizeSlider" min="50" max="200" value="100">
+        </div>
+        <label>
+            <input type="checkbox" id="soundToggle" checked>
+            音效开关
+        </label>
+    </div>
+    <div class="ball" id="ball"></div>
+    <div class="square" id="square"></div>
+
+    <script>
+        const screenWidth = window.innerWidth;
+        const screenHeight = window.innerHeight;
+
+        const ballImageInput = document.getElementById('ballImageInput');
+        const squareImageInput1 = document.getElementById('squareImageInput1');
+        const squareImageInput2 = document.getElementById('squareImageInput2');
+        const backgroundImageInput = document.getElementById('backgroundImageInput');
+        const soundEffectInput = document.getElementById('soundEffectInput');
+        const speedSlider = document.getElementById('speedSlider');
+        const speedValue = document.getElementById('speedValue');
+        const backgroundSizeSlider = document.getElementById('backgroundSizeSlider');
+        const backgroundSizeValue = document.getElementById('backgroundSizeValue');
+        const soundToggle = document.getElementById('soundToggle');
+
+        // Ball properties
+        let ball = document.getElementById('ball');
+        let ballX = Math.random() * (screenWidth - 100);
+        let ballY = Math.random() * (screenHeight - 100);
+        let ballSpeedX = (Math.random() - 0.5) * 12; // Random speed between -6 and 6
+        let ballSpeedY = (Math.random() - 0.5) * 12;
+        let ballImage = null; // Store custom ball image
+
+        // Square properties
+        const square = document.getElementById('square');
+        let squareX = Math.random() * (screenWidth - 120);
+        let squareY = Math.random() * (screenHeight - 120);
+        const squareStepSize = 2; // Square step size (slower than ball)
+        let isShaking = false; // Indicates if the square is shaking
+        let isNearBall = false; // Indicates if the square is near the ball
+        let squareImage1 = null;
+        let squareImage2 = null;
+        let soundEffect = null;
+
+        ball.style.left = `${ballX}px`;
+        ball.style.top = `${ballY}px`;
+
+        square.style.left = `${squareX}px`;
+        square.style.top = `${squareY}px`;
+
+        // Function to move the ball randomly
+        function moveBall() {
+            ballX += ballSpeedX;
+            ballY += ballSpeedY;
+
+            // Bounce off walls
+            if (ballX <= 0 || ballX >= screenWidth - ball.offsetWidth) {
+                ballSpeedX *= -1;
+            }
+            if (ballY <= 0 || ballY >= screenHeight - ball.offsetHeight) {
+                ballSpeedY *= -1;
+            }
+
+            ball.style.left = `${ballX}px`;
+            ball.style.top = `${ballY}px`;
+        }
+
+        // Function to move the square towards the ball
+        function moveSquare() {
+            if (isShaking) return; // Stop moving if the square is shaking
+
+            const dx = ballX - squareX;
+            const dy = ballY - squareY;
+            const distance = Math.sqrt(dx * dx + dy * dy);
+
+            if (distance > squareStepSize) {
+                squareX += (dx / distance) * squareStepSize;
+                squareY += (dy / distance) * squareStepSize;
+                square.style.left = `${squareX}px`;
+                square.style.top = `${squareY}px`;
+            }
+
+            // Check if the square is near the ball
+            if (distance < 150) {
+                if (!isNearBall) {
+                    isNearBall = true;
+                    startSquareImageSwitching();
+                    playSoundEffect();
+                }
+            } else {
+                isNearBall = false;
+            }
+
+            // Check if the square catches the ball
+            if (distance < 60) { // If the square is close enough to the ball
+                generateParticles(ballX + 50, ballY + 50); // Generate particles at the ball's center
+                regenerateBall();
+                shakeSquare();
+            }
+        }
+
+        // Function to regenerate the ball
+        function regenerateBall() {
+            // Remove the current ball
+            ball.remove();
+
+            // Create a new ball
+            ball = document.createElement('div');
+            ball.className = 'ball';
+            document.body.appendChild(ball);
+
+            // Set new random position and speed for the ball
+            ballX = Math.random() * (screenWidth - ball.offsetWidth);
+            ballY = Math.random() * (screenHeight - ball.offsetHeight);
+            ballSpeedX = (Math.random() - 0.5) * parseInt(speedSlider.value); // Adjust speed based on slider
+            ballSpeedY = (Math.random() - 0.5) * parseInt(speedSlider.value);
+
+            ball.style.left = `${ballX}px`;
+            ball.style.top = `${ballY}px`;
+
+            // Apply custom image if available
+            if (ballImage) {
+                ball.style.backgroundImage = `url(${ballImage})`;
+                ball.style.backgroundColor = 'transparent'; // Make background transparent
+            }
+
+            enableBallDragging(); // Re-enable dragging for the new ball
+        }
+
+        // Function to make the square shake
+        function shakeSquare() {
+            isShaking = true;
+            let shakeCount = 0;
+            const maxShakes = 20; // Number of shakes
+            const shakeDistance = 10; // Distance to move left and right
+
+            const shakeInterval = setInterval(() => {
+                if (shakeCount >= maxShakes) {
+                    clearInterval(shakeInterval);
+                    isShaking = false;
+                    return;
+                }
+
+                // Alternate between left and right
+                if (shakeCount % 2 === 0) {
+                    square.style.transform = `translateX(${shakeDistance}px)`;
+                } else {
+                    square.style.transform = `translateX(${-shakeDistance}px)`;
+                }
+
+                shakeCount++;
+            }, 50); // Shake every 50ms
+
+            // Reset the transform after shaking
+            setTimeout(() => {
+                square.style.transform = 'translateX(0)';
+            }, maxShakes * 50);
+        }
+
+        // Function to generate particles
+        function generateParticles(x, y) {
+            const particleCount = 30; // Number of particles
+            for (let i = 0; i < particleCount; i++) {
+                const particle = document.createElement('div');
+                particle.className = 'particle';
+                particle.style.left = `${x}px`;
+                particle.style.top = `${y}px`;
+
+                // Randomize particle movement
+                const angle = Math.random() * 2 * Math.PI; // Random angle
+                const speed = Math.random() * 5 + 2; // Random speed
+                const velocityX = Math.cos(angle) * speed;
+                const velocityY = Math.sin(angle) * speed;
+
+                document.body.appendChild(particle);
+
+                // Animate particle
+                let lifetime = 0;
+                const maxLifetime = 50; // Particle lifetime in frames
+                const particleInterval = setInterval(() => {
+                    if (lifetime >= maxLifetime) {
+                        clearInterval(particleInterval);
+                        particle.remove(); // Remove particle after its lifetime
+                        return;
+                    }
+
+                    x += velocityX;
+                    y += velocityY;
+                    particle.style.left = `${x}px`;
+                    particle.style.top = `${y}px`;
+                    lifetime++;
+                }, 16); // Update every 16ms (~60fps)
+            }
+        }
+
+        // Function to start switching square images
+        function startSquareImageSwitching() {
+            if (!squareImage1 || !squareImage2) return;
+
+            let isImage1 = true;
+            const switchInterval = setInterval(() => {
+                if (!isNearBall) {
+                    clearInterval(switchInterval);
+                    return;
+                }
+
+                square.style.backgroundImage = isImage1
+                    ? `url(${squareImage1})`
+                    : `url(${squareImage2})`;
+                isImage1 = !isImage1;
+            }, 100); // Switch every 100ms
+        }
+
+        // Function to play sound effect
+        function playSoundEffect() {
+            if (soundEffect && soundToggle.checked) {
+                soundEffect.currentTime = 0; // Reset sound to the beginning
+                soundEffect.play();
+            }
+        }
+
+        // Enable dragging for the ball
+        function enableBallDragging() {
+            let isDragging = false;
+            let offsetX = 0;
+            let offsetY = 0;
+
+            ball.addEventListener('mousedown', (event) => {
+                isDragging = true;
+                offsetX = event.clientX - ballX;
+                offsetY = event.clientY - ballY;
+                ball.style.cursor = 'grabbing'; // Change cursor to indicate dragging
+            });
+
+            document.addEventListener('mousemove', (event) => {
+                if (isDragging) {
+                    ballX = event.clientX - offsetX;
+                    ballY = event.clientY - offsetY;
+
+                    // Prevent the ball from going out of bounds
+                    ballX = Math.max(0, Math.min(screenWidth - ball.offsetWidth, ballX));
+                    ballY = Math.max(0, Math.min(screenHeight - ball.offsetHeight, ballY));
+
+                    ball.style.left = `${ballX}px`;
+                    ball.style.top = `${ballY}px`;
+                }
+            });
+
+            document.addEventListener('mouseup', () => {
+                isDragging = false;
+                ball.style.cursor = 'grab'; // Reset cursor
+            });
+        }
+
+        // Handle custom ball image upload
+        ballImageInput.addEventListener('change', (event) => {
+            const file = event.target.files[0];
+            if (file) {
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    ballImage = e.target.result; // Store the custom image
+                    ball.style.backgroundImage = `url(${ballImage})`;
+                    ball.style.backgroundColor = 'transparent'; // Make background transparent
+                };
+                reader.readAsDataURL(file);
+            }
+        });
+
+        // Handle custom square image 1 upload
+        squareImageInput1.addEventListener('change', (event) => {
+            const file = event.target.files[0];
+            if (file) {
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    squareImage1 = e.target.result;
+                    square.style.backgroundImage = `url(${squareImage1})`; // Set initial image
+                    square.style.backgroundColor = 'transparent'; // Make background transparent
+                };
+                reader.readAsDataURL(file);
+            }
+        });
+
+        // Handle custom square image 2 upload
+        squareImageInput2.addEventListener('change', (event) => {
+            const file = event.target.files[0];
+            if (file) {
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    squareImage2 = e.target.result;
+                };
+                reader.readAsDataURL(file);
+            }
+        });
+
+        // Handle custom background image upload
+        backgroundImageInput.addEventListener('change', (event) => {
+            const file = event.target.files[0];
+            if (file) {
+                const reader = new FileReader();
+                reader.onload = (e) => {
+                    document.body.style.backgroundImage = `url(${e.target.result})`;
+                };
+                reader.readAsDataURL(file);
+            }
+        });
+
+        // Handle custom sound effect upload
+        soundEffectInput.addEventListener('change', (event) => {
+            const file = event.target.files[0];
+            if (file) {
+                soundEffect = new Audio(URL.createObjectURL(file));
+            }
+        });
+
+        // Update ball speed based on slider
+        speedSlider.addEventListener('input', () => {
+            speedValue.textContent = speedSlider.value;
+            ballSpeedX = (Math.random() - 0.5) * parseInt(speedSlider.value);
+            ballSpeedY = (Math.random() - 0.5) * parseInt(speedSlider.value);
+        });
+
+        // Update background size based on slider
+        backgroundSizeSlider.addEventListener('input', () => {
+            const size = backgroundSizeSlider.value;
+            backgroundSizeValue.textContent = `${size}%`;
+            document.body.style.backgroundSize = `${size}%`;
+        });
+
+        // Set intervals for ball and square movement
+        setInterval(moveBall, 20); // Ball moves every 20ms
+        setInterval(moveSquare, 10); // Square moves every 10ms
+
+        // Enable dragging for the initial ball
+        enableBallDragging();
+    </script>
+<script>window.parent.postMessage({ action: "ready" }, "*"); 
+ 
+window.console = new Proxy(console, {
+  get(target, prop) {
+    if (['log', 'warn', 'error'].includes(prop)) {
+      return new Proxy(target[prop], {
+        apply(fn, thisArg, args) {
+          fn.apply(thisArg, args);
+          window.parent.postMessage({ action: 'console', 
+            type: prop, 
+            args: args.map((arg) => {
+              try {
+                return JSON.stringify(arg).replace(/^["']|["']$/g, '');
+              } catch (e) {
+                return arg;
+              }
+            }) 
+          }, '*');
+        }
+      });
+    }
+    return target[prop];
+  }
+});
+</script></body>
+</html>
